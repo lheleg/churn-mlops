@@ -1,0 +1,14 @@
+# Terraform state
+*.tfstate
+*.tfstate.*
+
+# Provider plugins and cache
+.terraform/
+
+# Variable files with real values
+*.tfvars
+!*.tfvars.example
+
+# Crash logs
+crash.log
+crash.*.log

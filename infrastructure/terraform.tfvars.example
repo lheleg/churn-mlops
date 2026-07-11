@@ -1,0 +1,14 @@
+aws_region   = "eu-central-1"
+project_name = "churn-mlops"
+
+# GitHub source for the CI/CD pipeline.
+github_owner  = "your-github-username"
+github_repo   = "churn-mlops"
+github_branch = "main"
+
+# --- SageMaker Studio Domain (optional, cost-bearing) ---
+# Leave disabled for the baseline sklearn model. To enable, set to true and
+# provide a VPC and at least one subnet.
+enable_sagemaker_domain = false
+# sagemaker_vpc_id     = "vpc-xxxxxxxx"
+# sagemaker_subnet_ids = ["subnet-aaaaaaaa", "subnet-bbbbbbbb"]

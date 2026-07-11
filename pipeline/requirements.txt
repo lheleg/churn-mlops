@@ -1,0 +1,4 @@
+# SageMaker pipeline authoring (kept separate from the local baseline deps).
+# Install alongside the base requirements when building/running the pipeline.
+sagemaker>=2.200
+boto3>=1.34
