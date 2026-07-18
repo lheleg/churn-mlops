@@ -37,7 +37,7 @@ from pipeline.config import (
     TRAINING_INSTANCE_TYPE,
 )
 
-SCRIPTS_DIR = os.path.join(os.path.dirname(__file__), "scripts")
+SCRIPTS_DIR = os.path.relpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts"))
 
 
 def get_pipeline(region=None, role=None, default_bucket=None) -> Pipeline:

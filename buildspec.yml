@@ -1,6 +1,14 @@
 version: 0.2
 
-# CI build spec run by AWS CodeBuild (referenced by the CodePipeline Build stage).
+# MERGE path (CodePipeline Build stage). On every merge to main this:
+#   1. installs deps and runs the test suite,
+#   2. upserts the SageMaker pipeline definition (pipeline-as-code stays in sync),
+#   3. starts a training run ONLY when pipeline/, src/, or data/ changed.
+# The Source action uses CODEBUILD_CLONE_REF so real git history is available
+# for the path check below.
+
+env:
+  git-credential-helper: yes
 
 phases:
   install:
@@ -8,10 +16,24 @@ phases:
       python: 3.12
     commands:
       - python -m pip install --upgrade pip
-      - pip install -r requirements.txt
+      - pip install -r requirements.txt -r pipeline/requirements.txt
   pre_build:
     commands:
       - aws s3 cp s3://$DATA_BUCKET/data/raw/telco_churn.csv data/raw/telco_churn.csv
   build:
     commands:
       - pytest -v
+  post_build:
+    commands:
+      # (2) Keep the registered pipeline definition in sync with the repo.
+      - python -m pipeline.pipeline --role "$SAGEMAKER_ROLE_ARN" --region "$AWS_DEFAULT_REGION" --default-bucket "$DATA_BUCKET"
+      # (3) Path-scoped training: retrain only on model-relevant changes.
+      - |
+        if git diff --name-only HEAD~1 HEAD | grep -qE '^(pipeline/|src/|data/)'; then
+          echo "Model-relevant change detected -> starting training run";
+          aws sagemaker start-pipeline-execution \
+            --pipeline-name "$PIPELINE_NAME" \
+            --pipeline-parameters Name=InputDataUrl,Value=s3://$DATA_BUCKET/data/raw/telco_churn.csv;
+        else
+          echo "No model-relevant change -> pipeline definition synced, training skipped";
+        fi

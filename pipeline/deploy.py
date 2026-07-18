@@ -34,6 +34,15 @@ def latest_approved_package_arn(sm_client, group_name: str) -> str:
     return packages[0]["ModelPackageArn"]
 
 
+def endpoint_exists(sm_client, endpoint_name: str) -> bool:
+    """True if the endpoint already exists (so we update in place vs. create)."""
+    try:
+        sm_client.describe_endpoint(EndpointName=endpoint_name)
+        return True
+    except sm_client.exceptions.ClientError:
+        return False
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--role", required=True, help="SageMaker execution role ARN")
@@ -52,14 +61,17 @@ def main():
     model = ModelPackage(
         role=args.role, model_package_arn=package_arn, sagemaker_session=sagemaker_session
     )
+    already_exists = endpoint_exists(sm_client, args.endpoint_name)
     model.deploy(
         endpoint_name=args.endpoint_name,
         serverless_inference_config=ServerlessInferenceConfig(
             memory_size_in_mb=SERVERLESS_MEMORY_MB,
             max_concurrency=SERVERLESS_MAX_CONCURRENCY,
         ),
+        update_endpoint=already_exists,
     )
-    print(f"Deployed to serverless endpoint: {args.endpoint_name}")
+    action = "Updated" if already_exists else "Deployed"
+    print(f"{action} serverless endpoint: {args.endpoint_name}")
 
 
 if __name__ == "__main__":

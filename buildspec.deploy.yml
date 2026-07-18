@@ -1,0 +1,16 @@
+version: 0.2
+
+# DEPLOY path. Triggered by EventBridge when a churn model package is Approved in
+# the Model Registry. Reuses pipeline/deploy.py to create (or update) the
+# serverless endpoint from the latest approved model version.
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.12
+    commands:
+      - python -m pip install --upgrade pip
+      - pip install -r requirements.txt -r pipeline/requirements.txt
+  build:
+    commands:
+      - python -m pipeline.deploy --role "$SAGEMAKER_ROLE_ARN" --region "$AWS_DEFAULT_REGION" --endpoint-name "$ENDPOINT_NAME"

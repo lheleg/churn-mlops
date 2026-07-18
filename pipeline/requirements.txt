@@ -1,4 +1,6 @@
 # SageMaker pipeline authoring (kept separate from the local baseline deps).
 # Install alongside the base requirements when building/running the pipeline.
-sagemaker>=2.200
+# Pinned to SDK v2: the pipeline uses the v2 `sagemaker.workflow` API, which was
+# reorganized in v3. Requires Python <=3.12 (3.13/3.14 lack wheels for deps).
+sagemaker>=2.200,<3
 boto3>=1.34

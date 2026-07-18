@@ -27,6 +27,12 @@ variable "github_branch" {
   default     = "main"
 }
 
+variable "github_pat" {
+  description = "GitHub fine-grained PAT for CodeBuild PR webhooks. Pass via TF_VAR_github_pat; never commit."
+  type        = string
+  sensitive   = true
+}
+
 # --- SageMaker Studio Domain (optional, cost-bearing) ---
 # The baseline sklearn model trains locally / in CodeBuild, so the Domain is
 # OFF by default. Should be turned on only when using SageMaker Studio.
