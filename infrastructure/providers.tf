@@ -14,7 +14,8 @@ terraform {
 }
 
 provider "aws" {
-  region = var.aws_region
+  region  = var.aws_region
+  profile = "terraform"
 
   # Applied to every resource that supports tagging.
   default_tags {

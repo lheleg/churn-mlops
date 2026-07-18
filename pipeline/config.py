@@ -11,8 +11,8 @@ BASE_JOB_PREFIX = "churn"
 FRAMEWORK_VERSION = "1.2-1"
 
 # --- Instance types ---
-PROCESSING_INSTANCE_TYPE = "ml.m5.large"
-TRAINING_INSTANCE_TYPE = "ml.m5.large"
+PROCESSING_INSTANCE_TYPE = "ml.t3.medium"
+TRAINING_INSTANCE_TYPE = "ml.m5.xlarge"
 
 # --- Quality gate: register the model only if test ROC-AUC >= threshold ---
 ROC_AUC_THRESHOLD = 0.75

@@ -1,0 +1,19 @@
+version: 0.2
+
+# PR gate (standalone CodeBuild webhook). Runs on pull requests targeting main.
+# Tests ONLY -- no SageMaker permissions, no training, no deploy. Its purpose is
+# to keep main green: a red build blocks the merge (via branch protection).
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.12
+    commands:
+      - python -m pip install --upgrade pip
+      - pip install -r requirements.txt
+  pre_build:
+    commands:
+      - aws s3 cp s3://$DATA_BUCKET/data/raw/telco_churn.csv data/raw/telco_churn.csv
+  build:
+    commands:
+      - pytest -v

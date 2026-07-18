@@ -101,7 +101,7 @@ def _parse_args():
     # Hyperparameters (passed by the estimator in the pipeline).
     parser.add_argument("--n-estimators", type=int, default=200)
     parser.add_argument("--max-depth", type=int, default=10)
-    parser.add_argument("--C", type=float, default=1.0)
+    parser.add_argument("-C", "--C", dest="C", type=float, default=1.0)
     # SageMaker channels / paths (fall back to env vars, then local defaults).
     parser.add_argument("--model-dir", default=os.environ.get("SM_MODEL_DIR", "/opt/ml/model"))
     parser.add_argument("--train", default=os.environ.get("SM_CHANNEL_TRAIN", "/opt/ml/input/data/train"))

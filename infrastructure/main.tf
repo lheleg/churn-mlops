@@ -21,11 +21,13 @@ module "sagemaker" {
 }
 
 module "cicd" {
-  source           = "./modules/cicd"
-  project_name     = var.project_name
-  github_owner     = var.github_owner
-  github_repo      = var.github_repo
-  github_branch    = var.github_branch
-  data_bucket_name = module.s3.bucket_name
-  data_bucket_arn  = module.s3.bucket_arn
+  source             = "./modules/cicd"
+  project_name       = var.project_name
+  github_owner       = var.github_owner
+  github_repo        = var.github_repo
+  github_branch      = var.github_branch
+  data_bucket_name   = module.s3.bucket_name
+  data_bucket_arn    = module.s3.bucket_arn
+  execution_role_arn = module.iam.execution_role_arn
+  github_pat         = var.github_pat
 }
