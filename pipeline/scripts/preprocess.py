@@ -1,4 +1,4 @@
-"""SageMaker Processing entry point: clean, encode, scale, split.
+"""SageMaker Processing entry point: clean and split (leakage-safe).
 
 Runs inside an SKLearnProcessor container in the pipeline, but is also runnable
 locally for testing:
@@ -8,7 +8,10 @@ locally for testing:
         --base-dir /tmp/churn-proc
 
 Outputs train.csv / validation.csv / test.csv (target `Churn` as first column,
-with header) under {base-dir}/{train,validation,test}/.
+with header) under {base-dir}/{train,validation,test}/. Rows are the *raw*
+cleaned features (categoricals still strings); encoding and scaling are fit
+inside the model artifact at training time, not here, so the endpoint takes raw
+records and training/serving skew is impossible by construction.
 """
 
 import argparse
@@ -17,14 +20,12 @@ import os
 
 import pandas as pd
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
 TARGET = "Churn"
 ID_COLUMN = "customerID"
-NUMERIC_FEATURES = ["tenure", "MonthlyCharges", "TotalCharges"]
 RANDOM_STATE = 42
 
 
@@ -47,32 +48,6 @@ def clean(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def build_features(train_df, val_df, test_df):
-    """Fit encoders/scaler on TRAIN only, then apply to val/test (no leakage)."""
-    y_train, y_val, y_test = train_df[TARGET], val_df[TARGET], test_df[TARGET]
-    X_train = train_df.drop(columns=[TARGET])
-    X_val = val_df.drop(columns=[TARGET])
-    X_test = test_df.drop(columns=[TARGET])
-
-    # One-hot encode categoricals, then align val/test to the train columns.
-    X_train = pd.get_dummies(X_train, drop_first=True)
-    X_val = pd.get_dummies(X_val, drop_first=True).reindex(columns=X_train.columns, fill_value=0)
-    X_test = pd.get_dummies(X_test, drop_first=True).reindex(columns=X_train.columns, fill_value=0)
-
-    # Scale numeric features with a scaler fit on the training set only.
-    scaler = StandardScaler()
-    X_train[NUMERIC_FEATURES] = scaler.fit_transform(X_train[NUMERIC_FEATURES])
-    X_val[NUMERIC_FEATURES] = scaler.transform(X_val[NUMERIC_FEATURES])
-    X_test[NUMERIC_FEATURES] = scaler.transform(X_test[NUMERIC_FEATURES])
-
-    def reassemble(X, y):
-        out = X.copy()
-        out.insert(0, TARGET, y.values)
-        return out
-
-    return reassemble(X_train, y_train), reassemble(X_val, y_val), reassemble(X_test, y_test)
-
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--input-data", default="/opt/ml/processing/input")
@@ -92,13 +67,14 @@ def main():
         temp_df, test_size=0.50, random_state=RANDOM_STATE, stratify=temp_df[TARGET]
     )
 
-    train_out, val_out, test_out = build_features(train_df, val_df, test_df)
-
-    for name, frame in [("train", train_out), ("validation", val_out), ("test", test_out)]:
+    # Write target as the first column, raw features (still strings) after it.
+    feature_cols = [c for c in df.columns if c != TARGET]
+    ordered = [TARGET] + feature_cols
+    for name, frame in [("train", train_df), ("validation", val_df), ("test", test_df)]:
         out_dir = os.path.join(args.base_dir, name)
         os.makedirs(out_dir, exist_ok=True)
         path = os.path.join(out_dir, f"{name}.csv")
-        frame.to_csv(path, index=False)
+        frame[ordered].to_csv(path, index=False)
         logger.info("Wrote %s (%d rows, %d cols)", path, frame.shape[0], frame.shape[1])
 
 

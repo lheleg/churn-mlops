@@ -18,15 +18,54 @@ import os
 
 import joblib
 import pandas as pd
+from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
 TARGET = "Churn"
 RANDOM_STATE = 42
+
+# Raw feature groups.
+NUMERIC_FEATURES = ["tenure", "MonthlyCharges", "TotalCharges"]
+CATEGORICAL_FEATURES = [
+    "gender",
+    "Partner",
+    "Dependents",
+    "PhoneService",
+    "MultipleLines",
+    "InternetService",
+    "OnlineSecurity",
+    "OnlineBackup",
+    "DeviceProtection",
+    "TechSupport",
+    "StreamingTV",
+    "StreamingMovies",
+    "Contract",
+    "PaperlessBilling",
+    "PaymentMethod",
+]
+
+
+def _build_preprocessor() -> ColumnTransformer:
+    """Scale numerics, one-hot categoricals; everything else passes through.
+
+    `handle_unknown="ignore"` makes the encoder robust to categories unseen at
+    fit time, so a serving request with a novel value degrades gracefully
+    instead of erroring.
+    """
+    return ColumnTransformer(
+        transformers=[
+            ("num", StandardScaler(), NUMERIC_FEATURES),
+            ("cat", OneHotEncoder(handle_unknown="ignore"), CATEGORICAL_FEATURES),
+        ],
+        remainder="passthrough",
+    )
 
 
 def _load_channel(channel_dir: str) -> pd.DataFrame:
@@ -52,8 +91,13 @@ def train(args):
         ),
     }
 
+    # Each candidate is a full Pipeline: the same fitted preprocessor that
+    # trains the model also serves it, so the saved artifact takes raw records
+    # and training/serving skew is impossible by construction. Fitting only on
+    # the train channel preserves the leakage-safe property from preprocessing.
     best_name, best_model, best_auc = None, None, -1.0
-    for name, model in candidates.items():
+    for name, est in candidates.items():
+        model = Pipeline([("prep", _build_preprocessor()), ("clf", est)])
         model.fit(X_train, y_train)
         auc = roc_auc_score(y_val, model.predict_proba(X_val)[:, 1])
         logger.info("%s validation ROC-AUC: %.4f", name, auc)
@@ -79,6 +123,11 @@ def model_fn(model_dir):
 
 
 def input_fn(request_body, content_type="text/csv"):
+    """Parse a header-less CSV of raw feature values into a named DataFrame.
+
+    Column order must match feature_columns.json (the payload contract). Only
+    the raw features are expected — no header, no target.
+    """
     from io import StringIO
 
     if content_type != "text/csv":
@@ -89,6 +138,12 @@ def input_fn(request_body, content_type="text/csv"):
 def predict_fn(input_data, model_bundle):
     model, columns = model_bundle["model"], model_bundle["columns"]
     input_data.columns = columns[: input_data.shape[1]]
+    # TotalCharges arrives as text in the raw payload; the Pipeline's scaler
+    # needs it numeric (mirrors the cleaning step's coercion).
+    if "TotalCharges" in input_data.columns:
+        input_data["TotalCharges"] = pd.to_numeric(
+            input_data["TotalCharges"], errors="coerce"
+        ).fillna(0)
     return model.predict_proba(input_data)[:, 1]
 
 
