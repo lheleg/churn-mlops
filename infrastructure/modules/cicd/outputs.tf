@@ -1,14 +1,14 @@
-output "pipeline_name" {
-  description = "Name of the CodePipeline."
-  value       = aws_codepipeline.this.name
+output "build_project_name" {
+  description = "Name of the merge-build CodeBuild project."
+  value       = aws_codebuild_project.this.name
 }
 
-output "connection_arn" {
-  description = "ARN of the GitHub connection."
-  value       = aws_codestarconnections_connection.github.arn
+output "pr_test_project_name" {
+  description = "Name of the PR-gate CodeBuild project."
+  value       = aws_codebuild_project.pr_test.name
 }
 
-output "artifacts_bucket_name" {
-  description = "Name of the CodePipeline artifact bucket."
-  value       = aws_s3_bucket.artifacts.bucket
+output "deploy_project_name" {
+  description = "Name of the deploy CodeBuild project."
+  value       = aws_codebuild_project.deploy.name
 }

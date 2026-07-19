@@ -1,12 +1,8 @@
 # CI/CD wiring:
 #   PR -> main    : CodeBuild "pr_test" (webhook) runs pytest, reports status on the PR.
-#   merge -> main : CodePipeline (Source -> Build) upserts the SageMaker pipeline and
-#                   starts a training run (path-scoped) -> Model Registry.
+#   merge -> main : CodeBuild "build" (webhook on push) upserts the SageMaker pipeline
+#                   and starts a training run (path-scoped) -> Model Registry.
 #   approval      : EventBridge (model package -> Approved) -> CodeBuild "deploy" -> endpoint.
-
-resource "random_id" "suffix" {
-  byte_length = 4
-}
 
 data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
@@ -19,33 +15,13 @@ locals {
   endpoint_arn           = "arn:aws:sagemaker:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:endpoint/${var.serverless_endpoint_name}"
 }
 
-# --- GitHub connection (CodeConnections, GitHub App based) ---
-resource "aws_codestarconnections_connection" "github" {
-  name          = "${var.project_name}-github"
-  provider_type = "GitHub"
-}
-
-# CodeBuild needs its own GitHub credential to create webhooks and
-# report PR status -- the CodeConnections app above only covers CodePipeline's
-# source access. Provide a fine-grained PAT via the github_pat variable.
+# CodeBuild authenticates to GitHub with a fine-grained PAT (via the github_pat
+# variable) -- used to create the source webhooks, clone the repo, and report PR
+# status. Account-level credential shared by all GITHUB-source CodeBuild projects.
 resource "aws_codebuild_source_credential" "github" {
   auth_type   = "PERSONAL_ACCESS_TOKEN"
   server_type = "GITHUB"
   token       = var.github_pat
-}
-
-# --- Artifact bucket for CodePipeline ---
-resource "aws_s3_bucket" "artifacts" {
-  bucket = "${var.project_name}-artifacts-${random_id.suffix.hex}"
-  tags   = { Name = "${var.project_name}-artifacts" }
-}
-
-resource "aws_s3_bucket_public_access_block" "artifacts" {
-  bucket                  = aws_s3_bucket.artifacts.id
-  block_public_acls       = true
-  block_public_policy     = true
-  ignore_public_acls      = true
-  restrict_public_buckets = true
 }
 
 # ---------------------------------------------------------------------------
@@ -71,11 +47,6 @@ data "aws_iam_policy_document" "codebuild" {
     sid       = "Logs"
     actions   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
     resources = ["arn:aws:logs:*:*:*"]
-  }
-  statement {
-    sid       = "Artifacts"
-    actions   = ["s3:GetObject", "s3:PutObject", "s3:GetBucketLocation"]
-    resources = [aws_s3_bucket.artifacts.arn, "${aws_s3_bucket.artifacts.arn}/*"]
   }
   statement {
     # CodeBuild reads the raw dataset for data-validation tests, and writes the
@@ -104,13 +75,6 @@ data "aws_iam_policy_document" "codebuild" {
     actions   = ["iam:PassRole"]
     resources = [var.execution_role_arn]
   }
-  statement {
-    # Git-clone the source via the connection (CODEBUILD_CLONE_REF) so the
-    # path-scoped training check has full history.
-    sid       = "UseConnection"
-    actions   = ["codestar-connections:UseConnection"]
-    resources = [aws_codestarconnections_connection.github.arn]
-  }
 }
 
 resource "aws_iam_role_policy" "codebuild" {
@@ -124,7 +88,7 @@ resource "aws_codebuild_project" "this" {
   service_role = aws_iam_role.codebuild.arn
 
   artifacts {
-    type = "CODEPIPELINE"
+    type = "NO_ARTIFACTS"
   }
 
   environment {
@@ -147,8 +111,30 @@ resource "aws_codebuild_project" "this" {
   }
 
   source {
-    type      = "CODEPIPELINE"
-    buildspec = "buildspec.yml" # lives in the repo root
+    type            = "GITHUB"
+    location        = "https://github.com/${var.github_owner}/${var.github_repo}.git"
+    buildspec       = "buildspec.yml" # lives in the repo root
+    git_clone_depth = 0               # full history for the path-scoped `git diff HEAD~1`
+  }
+  source_version = var.github_branch
+
+  depends_on = [aws_codebuild_source_credential.github]
+}
+
+# Fire the merge build on every push to the main branch.
+resource "aws_codebuild_webhook" "build" {
+  project_name = aws_codebuild_project.this.name
+  build_type   = "BUILD"
+
+  filter_group {
+    filter {
+      type    = "EVENT"
+      pattern = "PUSH"
+    }
+    filter {
+      type    = "HEAD_REF"
+      pattern = "^refs/heads/${var.github_branch}$"
+    }
   }
 }
 
@@ -223,93 +209,6 @@ resource "aws_codebuild_webhook" "pr_test" {
     filter {
       type    = "BASE_REF"
       pattern = "^refs/heads/${var.github_branch}$"
-    }
-  }
-}
-
-# ---------------------------------------------------------------------------
-# CodePipeline 
-# ---------------------------------------------------------------------------
-data "aws_iam_policy_document" "codepipeline_assume" {
-  statement {
-    actions = ["sts:AssumeRole"]
-    principals {
-      type        = "Service"
-      identifiers = ["codepipeline.amazonaws.com"]
-    }
-  }
-}
-
-resource "aws_iam_role" "codepipeline" {
-  name               = "${var.project_name}-codepipeline"
-  assume_role_policy = data.aws_iam_policy_document.codepipeline_assume.json
-}
-
-data "aws_iam_policy_document" "codepipeline" {
-  statement {
-    sid       = "Artifacts"
-    actions   = ["s3:GetObject", "s3:PutObject", "s3:GetBucketLocation", "s3:ListBucket"]
-    resources = [aws_s3_bucket.artifacts.arn, "${aws_s3_bucket.artifacts.arn}/*"]
-  }
-  statement {
-    sid       = "StartBuild"
-    actions   = ["codebuild:StartBuild", "codebuild:BatchGetBuilds"]
-    resources = [aws_codebuild_project.this.arn]
-  }
-  statement {
-    sid       = "UseConnection"
-    actions   = ["codestar-connections:UseConnection"]
-    resources = [aws_codestarconnections_connection.github.arn]
-  }
-}
-
-resource "aws_iam_role_policy" "codepipeline" {
-  name   = "${var.project_name}-codepipeline"
-  role   = aws_iam_role.codepipeline.id
-  policy = data.aws_iam_policy_document.codepipeline.json
-}
-
-resource "aws_codepipeline" "this" {
-  name     = "${var.project_name}-pipeline"
-  role_arn = aws_iam_role.codepipeline.arn
-
-  artifact_store {
-    location = aws_s3_bucket.artifacts.bucket
-    type     = "S3"
-  }
-
-  stage {
-    name = "Source"
-    action {
-      name             = "Source"
-      category         = "Source"
-      owner            = "AWS"
-      provider         = "CodeStarSourceConnection"
-      version          = "1"
-      output_artifacts = ["source_output"]
-
-      configuration = {
-        ConnectionArn    = aws_codestarconnections_connection.github.arn
-        FullRepositoryId = "${var.github_owner}/${var.github_repo}"
-        BranchName       = var.github_branch
-        OutputArtifactFormat = "CODEBUILD_CLONE_REF"
-      }
-    }
-  }
-
-  stage {
-    name = "Build"
-    action {
-      name            = "Build"
-      category        = "Build"
-      owner           = "AWS"
-      provider        = "CodeBuild"
-      version         = "1"
-      input_artifacts = ["source_output"]
-
-      configuration = {
-        ProjectName = aws_codebuild_project.this.name
-      }
     }
   }
 }

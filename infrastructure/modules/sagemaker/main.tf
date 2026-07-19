@@ -19,3 +19,11 @@ resource "aws_sagemaker_domain" "this" {
     execution_role = var.execution_role_arn
   }
 }
+
+# A user profile is required to open Studio.
+resource "aws_sagemaker_user_profile" "this" {
+  count = var.enable_domain ? 1 : 0
+
+  domain_id         = aws_sagemaker_domain.this[0].id
+  user_profile_name = "${var.project_name}-user"
+}

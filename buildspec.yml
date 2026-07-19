@@ -1,11 +1,11 @@
 version: 0.2
 
-# MERGE path (CodePipeline Build stage). On every merge to main this:
+# MERGE path (CodeBuild "build", triggered by a webhook on push to main). This:
 #   1. installs deps and runs the test suite,
 #   2. upserts the SageMaker pipeline definition (pipeline-as-code stays in sync),
 #   3. starts a training run ONLY when pipeline/, src/, or data/ changed.
-# The Source action uses CODEBUILD_CLONE_REF so real git history is available
-# for the path check below.
+# The project clones with full history (git_clone_depth = 0) so the path check
+# below can diff HEAD~1..HEAD.
 
 env:
   git-credential-helper: yes
