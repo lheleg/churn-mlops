@@ -14,7 +14,7 @@ variable "github_repo" {
 }
 
 variable "github_branch" {
-  description = "Branch that triggers the pipeline."
+  description = "Branch whose pushes trigger the merge build (and PRs targeting it trigger the PR gate)."
   type        = string
   default     = "main"
 }
@@ -35,7 +35,7 @@ variable "execution_role_arn" {
 }
 
 variable "github_pat" {
-  description = "GitHub fine-grained PAT for CodeBuild to create the PR webhook and report build status. Pass via TF_VAR_github_pat."
+  description = "GitHub fine-grained PAT for CodeBuild to create the push/PR webhooks, clone the repo, and report PR status. Pass via TF_VAR_github_pat."
   type        = string
   sensitive   = true
 }

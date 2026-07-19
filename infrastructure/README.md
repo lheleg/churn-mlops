@@ -12,7 +12,7 @@ SDK, not Terraform, so they can be spun up/down cheaply.
 | `s3`        | Data/artifact bucket: versioned, encrypted, private, lifecycle rule |
 | `iam`       | SageMaker execution role (S3 scoped to project bucket, logs)       |
 | `sagemaker` | SageMaker Studio Domain — **optional**, off by default            |
-| `cicd`      | GitHub connection + CodePipeline (Source → Build) + CodeBuild      |
+| `cicd`      | CodeBuild projects (PR gate, merge build, deploy) + GitHub webhooks + EventBridge |
 
 ## Prerequisites
 
@@ -42,9 +42,14 @@ terraform plan       # preview changes (creates nothing)
 terraform apply      # create resources
 ```
 
+### GitHub access
+
+All three CodeBuild projects authenticate to GitHub with a fine-grained PAT.
+Provide it as `TF_VAR_github_pat` (or a `github_pat` entry in `terraform.tfvars`)
+**before** `terraform apply` — the PAT is used to register the push/PR webhooks,
+clone the repo, and report PR status. No console handshake is required.
+
 ### Manual step after apply
 
-The GitHub connection is created in **PENDING** status. Authorize it once in the
-AWS console: **Developer Tools → Settings → Connections →** select the connection
-→ **Update pending connection** → complete the GitHub handshake. The pipeline
-cannot pull source until this is done.
+Add a branch-protection rule on `main` requiring the `churn-mlops-pr-test` check,
+so the PR gate is blocking (via the GitHub UI or `gh api`).

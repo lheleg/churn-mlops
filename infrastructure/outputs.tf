@@ -20,12 +20,7 @@ output "sagemaker_domain_id" {
   value       = module.sagemaker.domain_id
 }
 
-output "pipeline_name" {
-  description = "CodePipeline name."
-  value       = module.cicd.pipeline_name
-}
-
-output "github_connection_arn" {
-  description = "GitHub connection ARN."
-  value       = module.cicd.connection_arn
+output "build_project_name" {
+  description = "Merge-build CodeBuild project name."
+  value       = module.cicd.build_project_name
 }
