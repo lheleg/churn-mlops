@@ -7,11 +7,9 @@ console or via the SDK).
 """
 
 import argparse
+import time
 
 import boto3
-import sagemaker
-from sagemaker import ModelPackage
-from sagemaker.serverless import ServerlessInferenceConfig
 
 from pipeline.config import (
     MODEL_PACKAGE_GROUP,
@@ -51,27 +49,52 @@ def main():
     args = parser.parse_args()
 
     region = args.region or boto3.Session().region_name
-    boto_session = boto3.Session(region_name=region)
-    sagemaker_session = sagemaker.Session(boto_session=boto_session)
-    sm_client = boto_session.client("sagemaker")
+    sm_client = boto3.Session(region_name=region).client("sagemaker")
 
     package_arn = latest_approved_package_arn(sm_client, MODEL_PACKAGE_GROUP)
     print(f"Deploying model package: {package_arn}")
 
-    model = ModelPackage(
-        role=args.role, model_package_arn=package_arn, sagemaker_session=sagemaker_session
+    # Fresh, immutable model + endpoint config per deploy (timestamped names).
+    suffix = time.strftime("%Y%m%d-%H%M%S")
+    model_name = f"{args.endpoint_name}-{suffix}"
+    config_name = f"{args.endpoint_name}-{suffix}"
+
+    sm_client.create_model(
+        ModelName=model_name,
+        ExecutionRoleArn=args.role,
+        Containers=[{"ModelPackageName": package_arn}],
     )
-    already_exists = endpoint_exists(sm_client, args.endpoint_name)
-    model.deploy(
-        endpoint_name=args.endpoint_name,
-        serverless_inference_config=ServerlessInferenceConfig(
-            memory_size_in_mb=SERVERLESS_MEMORY_MB,
-            max_concurrency=SERVERLESS_MAX_CONCURRENCY,
-        ),
-        update_endpoint=already_exists,
+    sm_client.create_endpoint_config(
+        EndpointConfigName=config_name,
+        ProductionVariants=[
+            {
+                "VariantName": "AllTraffic",
+                "ModelName": model_name,
+                "ServerlessConfig": {
+                    "MemorySizeInMB": SERVERLESS_MEMORY_MB,
+                    "MaxConcurrency": SERVERLESS_MAX_CONCURRENCY,
+                },
+            }
+        ],
     )
-    action = "Updated" if already_exists else "Deployed"
-    print(f"{action} serverless endpoint: {args.endpoint_name}")
+
+    # Idempotent: create the endpoint the first time, roll it to the new config
+    # on subsequent runs. update_endpoint is a zero-downtime
+    # swap; both paths are serverless-safe.
+    if endpoint_exists(sm_client, args.endpoint_name):
+        sm_client.update_endpoint(
+            EndpointName=args.endpoint_name, EndpointConfigName=config_name
+        )
+        action = "Updated"
+    else:
+        sm_client.create_endpoint(
+            EndpointName=args.endpoint_name, EndpointConfigName=config_name
+        )
+        action = "Created"
+
+    print(f"{action} endpoint {args.endpoint_name}; waiting for InService...")
+    sm_client.get_waiter("endpoint_in_service").wait(EndpointName=args.endpoint_name)
+    print(f"Endpoint {args.endpoint_name} is InService serving {package_arn}")
 
 
 if __name__ == "__main__":
