@@ -13,7 +13,6 @@ vehicle to demonstrate an AWS-native MLOps stack built around **SageMaker**.
 | Baseline model | [`src/`](src/) | load → features → train (LR + RF) → evaluate; config, tests, EDA 
 | Infrastructure | [`infrastructure/`](infrastructure/README.md) | Terraform IaC: S3, IAM, SageMaker domain (optional), CI/CD 
 | Training pipeline | [`pipeline/`](pipeline/README.md) | SageMaker Pipeline: process → train → evaluate → gate → register; serverless deploy 
-| Monitoring | [`monitoring/`](monitoring/README.md) | PSI drift check (local) + SageMaker Model Monitor 
 
 Data, models, reports, and Terraform state are gitignored.
 
@@ -47,7 +46,6 @@ offline before it ever runs on AWS:
 python pipeline/scripts/preprocess.py --input-data data/raw/telco_churn.csv --base-dir /tmp/churn-proc
 python pipeline/scripts/train.py      --train /tmp/churn-proc/train --validation /tmp/churn-proc/validation --model-dir /tmp/churn-model
 python pipeline/scripts/evaluate.py   --model-dir /tmp/churn-model --test-dir /tmp/churn-proc/test --output-dir /tmp/churn-eval
-python -m monitoring.local_drift      --baseline /tmp/churn-proc/train/train.csv --current /tmp/churn-proc/test/test.csv
 ```
 
 ## Running on AWS
@@ -56,4 +54,3 @@ Requires AWS credentials + a SageMaker execution role. See the per-area guides:
 
 - **Infrastructure** → [`infrastructure/README.md`](infrastructure/README.md) (`terraform init/plan/apply`)
 - **Pipeline & serving** → [`pipeline/README.md`](pipeline/README.md) (upsert, execute, approve, deploy serverless)
-- **Monitoring** → [`monitoring/README.md`](monitoring/README.md) (baseline, drift check, scheduled monitor)
