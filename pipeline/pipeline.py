@@ -84,7 +84,7 @@ def get_pipeline(region=None, role=None, default_bucket=None) -> Pipeline:
         base_job_name=f"{BASE_JOB_PREFIX}-train",
         role=role,
         sagemaker_session=pipeline_session,
-        hyperparameters={"n-estimators": 200, "max-depth": 10, "C": 1.0},
+        hyperparameters={"n-estimators": 300, "max-depth": 12, "C": 1.0},
     )
     train_args = sklearn_estimator.fit(
         inputs={
