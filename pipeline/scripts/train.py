@@ -154,8 +154,8 @@ def output_fn(prediction, accept="text/csv"):
 def _parse_args():
     parser = argparse.ArgumentParser()
     # Hyperparameters (passed by the estimator in the pipeline).
-    parser.add_argument("--n-estimators", type=int, default=200)
-    parser.add_argument("--max-depth", type=int, default=10)
+    parser.add_argument("--n-estimators", type=int, default=300)
+    parser.add_argument("--max-depth", type=int, default=12)
     parser.add_argument("-C", "--C", dest="C", type=float, default=1.0)
     # SageMaker channels / paths (fall back to env vars, then local defaults).
     parser.add_argument("--model-dir", default=os.environ.get("SM_MODEL_DIR", "/opt/ml/model"))
